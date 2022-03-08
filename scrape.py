@@ -17,7 +17,7 @@ import csv	#for writing to file
 purge_these_certs = []
 
 def ask_user(question):
-	answer = input(question + "(y/n): ").lower().strip()
+	answer = input(question + " (y/n): ").lower().strip()
 	print("")
 	while not(answer == "y" or answer == "yes" or answer == "n" or answer == "no"):
 		print("Input yes or no")
@@ -34,12 +34,13 @@ def restricted_float(x):
 	except ValueError:
 		raise argparse.ArgumentTypeError("%r not a floating-point literal" % (x,))
 	return x
-	
+
 def write_results_to_file(filename, j_id, j_title, j_certs):
-	data = [j_id, j_title, j_certs]
-	with open(f'{filename}.csv', 'a+', newline='') as f:
-		write = csv.writer(f)
-		write.writerows(data)
+	with open(f'{filename}_allinfo.csv', 'a+') as f:
+		#writer = csv.DictWriter(f, fieldnames = header)
+		#writer.writeheader()
+		#writer.writerow({'job_id': j_id, 'job_title' : j_title, 'certifications' : j_certs})
+		f.write(f'{j_id[0]},{j_title[0]},{j_certs}\n')
 		
 def store_dict(filename, dic):
 	csv_cols = ['certification','count']
@@ -119,7 +120,7 @@ try:
 	#scroll through jobs listings
 	jobs_iteration = 0
 	if parsed.quick:
-		jobs_iteration = 2
+		jobs_iteration = 1
 	else:
 		jobs_iteration = (no_cyberjobs//25)+1
 	for i in tqdm(range(jobs_iteration)):
@@ -133,8 +134,10 @@ try:
 			if found > 0:
 				#time.sleep(1)
 				wd.find_element(By.CLASS_NAME, 'infinite-scroller__show-more-button--visible').click()
+				#time.sleep(0.5)
 			else:
 				time.sleep(1)
+				#WebDriverWait(wd, 5).until(EC.element_to_be_clickable((By.XPATH, "By.CLASS_NAME, 'infinite-scroller__show-more-button--visible'")))
 				
 		except:
 			time.sleep(1)
@@ -164,15 +167,7 @@ try:
 	
 	#Enumerating jobs
 	for job in tqdm(jobs):
-		j_id = job.find_element(By.CLASS_NAME, 'job-search-card').get_attribute('data-entity-urn')
-		j_id = str(j_id).replace('urn:li:jobPosting:','')
-		j_title = job.find_element(By.CLASS_NAME, 'base-search-card__title').get_attribute('innerText')
-		j_location = job.find_element(By.CLASS_NAME, 'job-search-card__location').get_attribute('innerText')
-		j_age = job.find_element(By.TAG_NAME, 'time').get_attribute('innerText')
-		job_id.append(j_id)
-		job_title.append(j_title)
-		job_location.append(j_location)
-		job_age.append(j_age)
+		
 		
 		#print(IWhite + f"\n[+] Now listing JOBID: {j_id}, {j_title}:")
 		
@@ -183,16 +178,36 @@ try:
 		#The first several jobs are particularly relevant to the -j flag
 		#Subsequent results are less important and don't need as much attention
 		if job_num < 50:
-			time.sleep(2.5)
+			#time.sleep(4)
+			try:
+				WebDriverWait(wd, 5).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/a/h2")))
+			except:
+				job_num += 1
+				continue
 		else:
 			if parsed.quick:
 				break
-			time.sleep(parsed.increment)
+			#time.sleep(parsed.increment)
+			try:
+				WebDriverWait(wd, 5).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/a/h2")))
+			except:
+				job_num += 1
+				continue
+		j_id = job.find_element(By.CLASS_NAME, 'job-search-card').get_attribute('data-entity-urn')
+		j_id = str(j_id).replace('urn:li:jobPosting:','')
+		j_title = job.find_element(By.CLASS_NAME, 'base-search-card__title').get_attribute('innerText')
+		j_location = job.find_element(By.CLASS_NAME, 'job-search-card__location').get_attribute('innerText')
+		j_age = job.find_element(By.TAG_NAME, 'time').get_attribute('innerText')
+		job_id.append(j_id)
+		job_title.append(j_title)
+		job_location.append(j_location)
+		job_age.append(j_age)
 		job_num = job_num + 1
 		#job_desc_block = "/html/body/div[1]/div/section/div[2]/div[1]/section[1]/div/div[2]/section/div"
 		
 		#This is the XPATH to the descriptive text
 		job_desc_block = "/html/body/div[1]/div/section/div[2]/div/section[1]/div/div/section/div"
+				
 		#Sometimes the script doesn't sleep long enough for text to load; we don't want to preemptively terminate the script, so this is a check to see if it's loaded.
 		found = len(wd.find_elements(By.XPATH, job_desc_block))
 		"""
@@ -232,7 +247,10 @@ try:
 				#print(IGreen + f"We found {found} instances of '{keyword}'")
 				#Parse lines that have the keywords for certifications
 				#Parse the line that has the keyword first
-				jd_foundline = wd.find_element(By.XPATH, key)
+				try:
+					jd_foundline = wd.find_element(By.XPATH, key)
+				except:
+					break
 				jd_foundlines = wd.find_elements(By.XPATH, key)
 				for jd_foundline in jd_foundlines:
 					sentence = jd_foundline.get_attribute('innerHTML')
