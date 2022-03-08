@@ -13,6 +13,9 @@ import argparse	#needed for parsing commandline arguments
 import csv	#for writing to file
 
 #Helper functions
+
+purge_these_certs = []
+
 def ask_user(question):
 	answer = input(question + "(y/n): ").lower().strip()
 	print("")
@@ -31,6 +34,19 @@ def restricted_float(x):
 	except ValueError:
 		raise argparse.ArgumentTypeError("%r not a floating-point literal" % (x,))
 	return x
+	
+def write_results_to_file(filename, j_id, j_title, j_certs):
+	data = [j_id, j_title, j_certs]
+	with open(f'{filename}.csv', 'a+', newline='') as f:
+		write = csv.writer(f)
+		write.writerows(data)
+		
+def store_dict(filename, dic):
+	csv_cols = ['certification','count']
+	with open(f'{filename}_certs.csv', 'a+') as f:
+		for key in dic.keys():
+			f.write("%s,%s\n"%(key,dic[key]))
+		
 
 #Configure command line arguments
 argp = argparse.ArgumentParser(description="Web Scraper meant for scraping certification information as it relates to InfoSec jobs off of LinkedIn")
@@ -38,24 +54,13 @@ argp.add_argument("-j", "--job", help="The job title or keyword to search for", 
 argp.add_argument("-t", "--time", choices=['day', 'week', 'month', 'all'], help="How recent the listings to be scraped should be", default="all")
 argp.add_argument("-s", "--seniority", type=list, help="The levels of seniority (1-5, least to greatest) to process as input: each level should be explicitly named for inclusion (e.g. for all levels, input is '12345'", default="1")
 argp.add_argument("-l", "--location", help="The geographic area to consider jobs. Default is 'remote'", default="remote")
-argp.add_argument("-i", "--increment", help="The increment of time in seconds that should be allowed to let jobs load for scraping", type=restricted_float, default=2)
+argp.add_argument("-i", "--increment", help="The increment of time in seconds that should be allowed to let jobs load for scraping", type=restricted_float, default=0.5)
 argp.add_argument("-o", "--output", help="The name of the file to output scrape results to")
 argp.add_argument("-q", "--quick", help="Only parse the first 100 results", action='store_true')
 
 
 
 parsed=argp.parse_args()
-
-print(f'Quick is {parsed.quick}')
-
-print("OUTPUT FILE: ")
-print(parsed.output)
-print(type(parsed.output))
-
-if parsed.output:
-	print("PRESENT")
-else:
-	print("NOT")
 
 timeDic = {
 	"day": "r86400",
@@ -112,11 +117,15 @@ try:
 		exit()
 	
 	#scroll through jobs listings
-	#i=2
-	for i in tqdm(range((no_cyberjobs//25)+1)):
-	#while i <= int(no_cyberjobs/25)+1:
-	#while i <= 500:
+	jobs_iteration = 0
+	if parsed.quick:
+		jobs_iteration = 2
+	else:
+		jobs_iteration = (no_cyberjobs//25)+1
+	for i in tqdm(range(jobs_iteration)):
 		wd.execute_script('window.scrollTo(0,document.body.scrollHeight);')
+		#if parsed.quick and i > 2:
+		#	break
 		#i = i + 1
 		try:
 			#Looking for the "See More Jobs" button that eventually appears when scrolling through job listings
@@ -141,14 +150,17 @@ try:
 	job_title = []
 	job_location = []
 	job_age = []
-	job_source = []
 	job_num = 1
 	failed_jobs = 0	#The number of jobs that failed to load for web scraping
 	no_certs = 0	#the number of jobs scraped where certs weren't found
 	yes_certs = 0	#The number of jobs scraped where certs were found
 	may_certs = 0	#The number of jobs scraped where certs may exist with closer inspection
+	job_tracker = 0 #Tracks how many jobs we've observed so far
 	
 	#cert_dic = {}
+	
+	#TODO, fix tqdm to reflect -q option
+	#TODO, implement interrupt function to allow user to change speed of jobs processing on-the-fly
 	
 	#Enumerating jobs
 	for job in tqdm(jobs):
@@ -166,11 +178,12 @@ try:
 		
 		#Pulling information from the job description by clicking through each job
 		#Reference for fetching XPATH: https://www.guru99.com/xpath-selenium.html
-		#job_link = f"/html/body/div[1]/div/main/section[2]/ul/li[{job_num}]/div"
 		job_link = f"/html/body/div[1]/div/main/section[2]/ul/li[{job_num}]/*"
 		wd.find_element(By.XPATH, job_link).click()
-		if job_num < 100:
-			time.sleep(3)
+		#The first several jobs are particularly relevant to the -j flag
+		#Subsequent results are less important and don't need as much attention
+		if job_num < 50:
+			time.sleep(2.5)
 		else:
 			if parsed.quick:
 				break
@@ -206,7 +219,7 @@ try:
 			failed_jobs += 1
 			continue
 		
-		keywords = ["certification", "certifications", "certs", "Certification", "Certification", "Certs", "accreditations", "accreditation"]
+		keywords = ["certification", "certifications", "certs", "Certification", "Certifications", "Certs", "accreditations", "accreditation"]
 		jd_certs = set()
 		
 		#Check if any of the of the keywords appear in the job description
@@ -298,12 +311,20 @@ try:
 			no_certs += 1
 		else:
 			yes_certs += 1
-			
+		
+		
+		job_tracker += 1
+		write_results_to_file(parsed.output, [j_id], [j_title], jd_certs)
+		
 		for cert in jd_certs:
 			if cert in cert_dic:
 				cert_dic[cert] += 1
 			else:
-				cert_dic[cert] = 1	
+				cert_dic[cert] = 1
+				
+		if job_tracker == 50:
+			res = dict(sorted(cert_dic.items(), key=lambda x: (-x[1], x[0])))
+			store_dict(f'{parsed.output}_first50', res)
 		#print(IWhite + str(jd_certs))
 
 	#wd.find_element(By.CLASS_NAME, 'jobs-search__results-list')
@@ -313,7 +334,8 @@ try:
 	print(IGreen + f"[+] A total of {yes_certs} jobs did have certs listed")
 	
 	res = dict(sorted(cert_dic.items(), key=lambda x: (-x[1], x[0])))
-
+	store_dict(f'{parsed.output}_all', res)
+	
 	for k,v in res.items():
 		print(f"{k} : {v}")
 except KeyboardInterrupt:
