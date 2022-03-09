@@ -58,6 +58,7 @@ argp.add_argument("-l", "--location", help="The geographic area to consider jobs
 argp.add_argument("-i", "--increment", help="The increment of time in seconds that should be allowed to let jobs load for scraping", type=restricted_float, default=0.5)
 argp.add_argument("-o", "--output", help="The name of the file to output scrape results to")
 argp.add_argument("-q", "--quick", help="Only parse the first 100 results", action='store_true')
+argp.add_argument("--max", help="The maximum number of jobs that should be processed", type=int)
 
 
 
@@ -110,12 +111,16 @@ try:
 	str_of_cyberjobs = str(wd.find_element_by_css_selector('h1>span').get_attribute('innerText'))
 	str_of_cyberjobs = str_of_cyberjobs.replace('+','')
 	no_cyberjobs = int(str_of_cyberjobs.replace(',', ''))
+	if parsed.max is not None and no_cyberjobs > parsed.max:
+		no_cyberjobs = parsed.max
 
 	#print(f"# of cybersecurity jobs: {no_cyberjobs}")
 	
+	"""
 	question = f"The certscraper has found {no_cyberjobs} to scrape, do you want to proceed?"
 	if not ask_user(question):
 		exit()
+	"""
 	
 	#scroll through jobs listings
 	jobs_iteration = 0
@@ -174,22 +179,31 @@ try:
 		#Pulling information from the job description by clicking through each job
 		#Reference for fetching XPATH: https://www.guru99.com/xpath-selenium.html
 		job_link = f"/html/body/div[1]/div/main/section[2]/ul/li[{job_num}]/*"
-		wd.find_element(By.XPATH, job_link).click()
+		try:
+			wd.find_element(By.XPATH, job_link).click()
+		except:
+			job_num += 1
+			continue
 		#The first several jobs are particularly relevant to the -j flag
 		#Subsequent results are less important and don't need as much attention
 		if job_num < 50:
-			#time.sleep(4)
+			#WebDriverWait(wd, 10).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/div/a")))
+			#time.sleep(2)
+			
 			try:
-				WebDriverWait(wd, 5).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/a/h2")))
+				#WebDriverWait(wd, {parsed.increment}).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/a")))
+				WebDriverWait(wd, parsed.increment).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/div/a")))
 			except:
 				job_num += 1
 				continue
+			
 		else:
 			if parsed.quick:
 				break
 			#time.sleep(parsed.increment)
 			try:
-				WebDriverWait(wd, 5).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/a/h2")))
+				#WebDriverWait(wd, {parsed.increment}).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/a")))
+				WebDriverWait(wd, parsed.increment).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/div/a")))
 			except:
 				job_num += 1
 				continue
@@ -207,6 +221,7 @@ try:
 		
 		#This is the XPATH to the descriptive text
 		job_desc_block = "/html/body/div[1]/div/section/div[2]/div/section[1]/div/div/section/div"
+		#job_desc_block = "/html/body/div[1]/div/section/div[2]/div/section[2]/div/div/section/div"
 				
 		#Sometimes the script doesn't sleep long enough for text to load; we don't want to preemptively terminate the script, so this is a check to see if it's loaded.
 		found = len(wd.find_elements(By.XPATH, job_desc_block))
@@ -230,6 +245,7 @@ try:
 		"""
 		if found > 0:
 			jd_block = wd.find_element(By.XPATH, job_desc_block).get_attribute('innerHTML')
+			#print(jd_block)
 		else:
 			failed_jobs += 1
 			continue
