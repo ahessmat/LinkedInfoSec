@@ -6,7 +6,6 @@ from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-import requests
 import time
 import pandas as pd
 import re	#needed for regex calls
@@ -43,13 +42,6 @@ def write_results_to_file(filename, j_id, j_title, j_certs):
 		#writer.writeheader()
 		#writer.writerow({'job_id': j_id, 'job_title' : j_title, 'certifications' : j_certs})
 		f.write(f'{j_id[0]},{j_title[0]},{j_certs}\n')
-
-def write_csv(filename, j_id, j_title, cert):
-	with open(f'{filename}_data.csv', 'a+') as f:
-		#writer = csv.DictWriter(f, fieldnames = header)
-		#writer.writeheader()
-		#writer.writerow({'job_id': j_id, 'job_title' : j_title, 'certifications' : j_certs})
-		f.write(f'{j_id},{j_title},{cert}\n')
 		
 def store_dict(filename, dic):
 	csv_cols = ['certification','count']
@@ -67,7 +59,6 @@ argp.add_argument("-l", "--location", help="The geographic area to consider jobs
 argp.add_argument("-i", "--increment", help="The increment of time in seconds that should be allowed to let jobs load for scraping", type=restricted_float, default=0.5)
 argp.add_argument("-o", "--output", help="The name of the file to output scrape results to")
 argp.add_argument("-q", "--quick", help="Only parse the first 100 results", action='store_true')
-argp.add_argument("-k", "--keywords", help="A list of keywords to more narrowly filter LinkedIn's search results; excludes any job titles that do NOT have any of the listed keywords", default="")
 argp.add_argument("--max", help="The maximum number of jobs that should be processed", type=int)
 
 
@@ -84,8 +75,6 @@ timeDic = {
 timeWindow = timeDic[parsed.time]
 
 seniority = ','.join(parsed.seniority)
-
-filterwords = (parsed.keywords).lower().split()
 
 IBlack="\033[0;90m"       # Black
 IRed="\033[0;91m"         # Red
@@ -186,20 +175,22 @@ try:
 	
 	#Enumerating jobs
 	for job in tqdm(jobs):
+		
+		
 		#print(IWhite + f"\n[+] Now listing JOBID: {job_id}, {job_title}:")
 		
 		#Pulling information from the job description by clicking through each job
 		#Reference for fetching XPATH: https://www.guru99.com/xpath-selenium.html
-		"""job_link = f"/html/body/div[1]/div/main/section[2]/ul/li[{job_num}]/*"
+		job_link = f"/html/body/div[1]/div/main/section[2]/ul/li[{job_num}]/*"
 		#print(job_link)
 		try:
 			wd.find_element(By.XPATH, job_link).click()
 		except:
 			job_num += 1
-			continue"""
+			continue
 		#The first several jobs are particularly relevant to the -j flag
 		#Subsequent results are less important and don't need as much attention
-		"""if job_num < 50:
+		if job_num < 50:
 			#WebDriverWait(wd, 10).until(EC.element_to_be_clickable((By.XPATH, "/html/body/div[1]/div/section/div[2]/section/div/div[1]/div/div/a")))
 			#time.sleep(2)
 			
@@ -221,7 +212,7 @@ try:
 			except:
 				print("F2")
 				job_num += 1
-				continue"""
+				continue
 		#print("IT WORKED")
 		j_id = job.find_element(By.CLASS_NAME, 'job-search-card').get_attribute('data-entity-urn')
 		j_id = str(j_id).replace('urn:li:jobPosting:','')
@@ -233,17 +224,8 @@ try:
 		job_location.append(j_location)
 		job_age.append(j_age)
 		job_num = job_num + 1
-
-		if len(filterwords) > 0:
-			t_title = j_title.lower()
-			isGood = False
-			for kword in filterwords:
-				if kword in t_title:
-					isGood = True
-			if not isGood:
-				continue
 		#job_desc_block = "/html/body/div[1]/div/section/div[2]/div[1]/section[1]/div/div[2]/section/div"
-		#print(job_num,j_id,j_title,j_age)
+		print(job_num,j_id,j_title,j_age)
 		
 		#This is the XPATH to the descriptive text
 		job_desc_block = "/html/body/div[1]/div/section/div[2]/div/section[1]/div/div/section/div"
@@ -251,6 +233,24 @@ try:
 				
 		#Sometimes the script doesn't sleep long enough for text to load; we don't want to preemptively terminate the script, so this is a check to see if it's loaded.
 		found = len(wd.find_elements(By.XPATH, job_desc_block))
+		"""
+		job_check = "section.two-pane-serp-page__detail-view"
+		wait = WebDriverWait(wd, 10)
+		test_el = wd.switch_to.frame(wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, job_check))))
+		#element = (wait.until(EC.visibility_of_element_located((By.XPATH, job_check))))
+		#driver.switch_to.frame(WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "turbo-checkout-iframe"))))
+		
+		
+		#print(found)
+		i = 0
+		while found < 1:
+			time.sleep(1)
+			found = len(wd.find_elements(By.XPATH, job_desc_block))
+			i += 1
+			if i > 5:
+				failed_jobs += 1
+				break
+		"""
 		if found > 0:
 			jd_block = wd.find_element(By.XPATH, job_desc_block).get_attribute('innerHTML')
 			#print(jd_block)
@@ -261,58 +261,101 @@ try:
 		keywords = ["certification", "certifications", "certs", "Certification", "Certifications", "Certs", "accreditations", "accreditation", "Certification(s)", "certification(s)"]
 		jd_certs = set()
 		
-		### FIND KEYWORDS ###
-		# Replace this URL with the one you want to request
-		#url = "https://www.linkedin.com/jobs/search?currentJobId=3716710886"
-		j_url = "https://www.linkedin.com/jobs/view/" + j_id
-
-		# Send a GET request to the URL
-		response = requests.get(j_url)
-		foundcert = False
-
-		# Check if the request was successful (status code 200)
-		if response.status_code == 200:
-			# Print the response content (the web page HTML, for example)
-			#print(response.text)
-
-			# Define the keywords you want to search for
-			keywords = ["certification", "certifications", "certs", "Certification", "Certifications", "Certs", "accreditations", "accreditation", "Certification(s)", "certification(s)"]
-
-			# Regular expression pattern to match any of the keywords
-			keyword_pattern = "|".join(re.escape(keyword) for keyword in keywords)
-			pattern = re.compile(keyword_pattern, re.I)  # 're.I' for case-insensitive matching
-
-			# Regular expression pattern to match words with "+" or at least 2 consecutive uppercase letters
-			#word_pattern = re.compile(r"\b(?:[A-Z]{2,}|\w+\+\w+\d+|\w+-\d+)(?![A-Z-])")
-			word_pattern = re.compile(r"[A-Z]+\-+[\w]+|[a-zA-Z]+\+|[\w]+[A-Z]{2,}")
-
+		#Check if any of the of the keywords appear in the job description
+		for keyword in keywords:
+			key = f"//*[contains(text(), '{keyword}')]"
+			found = len(wd.find_elements(By.XPATH, key))
+			#print(found)
 			
-			# Iterate through the response content line by line
-			for line in response.iter_lines(decode_unicode=True):
-				if pattern.search(line):
-					matching_words = word_pattern.findall(line)
-					if matching_words:
-						#print("Matching Line:", line)
-						#print("Matching Words:", matching_words)
-						#csvset = (matchin)
-						foundcert = True
-
-						for cred in set(matching_words):
-							write_csv(parsed.output, j_id, j_title, cred)
-						jd_certs.update(matching_words)
-		else:
-			#print(f"Failed to retrieve the page. Status code: {response.status_code}")
-			pass
-
-		"""if (jd_certs == set()):
+			#If a keyword is found, scrutinize
+			if found > 0:
+				print(IGreen + f"We found {found} instances of '{keyword}'")
+				#Parse lines that have the keywords for certifications
+				#Parse the line that has the keyword first
+				try:
+					jd_foundline = wd.find_element(By.XPATH, key)
+				except:
+					break
+				jd_foundlines = wd.find_elements(By.XPATH, key)
+				for jd_foundline in jd_foundlines:
+					sentence = jd_foundline.get_attribute('innerHTML')
+					
+					#Use regex to identify
+						#Certs that may include a "-"
+						#Certs that end with a "+"
+						#Certs that include at least 2 consecutive uppercase characters
+					cert_check = re.findall('[A-Z]+\-+[\w]+|[a-zA-Z]+\+|[\w]+[A-Z]{2,}', sentence)
+					
+					#Add found certifications to the set of discovered certs in the job listing
+					if len(cert_check) > 0:
+						#print(IGreen + "[+] Found these certs:")
+						#print(cert_check)
+						jd_certs.update(cert_check)
+					else:
+						#print( IRed + "[-] No certs in foundline, iterating")
+						#print(IWhite + sentence)
+						#all_children_by_xpath = jd_foundline.find_elements_by_xpath(".//*") #Deprecated in Selenium update
+						all_children_by_xpath = jd_foundline.find_elements("xpath",".//*")
+						print(all_children_by_xpath)
+						
+						#Check if any children elements exist that may have certs
+						for child in all_children_by_xpath:
+							sentence = child.get_attribute('innerHTML')
+							cert_check = re.findall('[A-Z]+\-+[\w]+|[a-zA-Z]+\+|[\w]+[A-Z]{2,}', sentence)
+							if len(cert_check) > 0:
+								#print(IGreen + "[+] Found these certs in child element:")
+								#print(cert_check)
+								jd_certs.update(cert_check)
+							else:
+								#print(IRed + "[-] No certs in children")
+								pass
+								
+						tags = ["p", "li", "ul"]
+						
+						for tag in tags:
+							another_el = []
+							next_el = jd_foundline.find_elements(By.XPATH, f".//following-sibling::{tag}")
+							if len(next_el) > 0:
+								sentence = next_el[0].get_attribute('innerHTML')
+								#print(IWhite + sentence)
+								cert_check = re.findall('[A-Z]+\-+[\w]+|[a-zA-Z]+\+|[\w]+[A-Z]{2,}', sentence)
+								if len(cert_check) > 0:
+									#print(IGreen + "[+] Found these certs in sibling element:")
+									#print(cert_check)
+									jd_certs.update(cert_check)
+									another_el = next_el[0].find_elements(By.XPATH, f".//following-sibling::{tag}")
+									
+							#This loop only triggers if we found a single valid cert
+							#Cycle through subsequent sibling elements of the same type to find more certifications
+							while True:	
+									if len(another_el) > 0:
+										sentence = another_el[0].get_attribute('innerHTML')
+										#print(IWhite + sentence)
+										cert_check = re.findall('[A-Z]+\-+[\w]+|[a-zA-Z]+\+|[\w]+[A-Z]{2,}', sentence)
+										if len(cert_check) > 0:
+											#print(IGreen + "[+] Found these certs in sibling element:")
+											#print(cert_check)
+											jd_certs.update(cert_check)
+											#Try grabbing the next element
+											another_el = another_el[0].find_elements(By.XPATH, f".//following-sibling::{tag}")
+										#The sibling element didn't have a recognized cert
+										else:
+											break
+									#The next element is absent
+									else:
+										break
+						"""
+						next_el = jd_foundline.find_elements(By.XPATH, ".//following-sibling::p")
+						print(IWhite + str(len(next_el)))
+						next_el = jd_foundline.find_elements(By.XPATH, ".//following-sibling::li")
+						print(IWhite + str(len(next_el)))
+						next_el = jd_foundline.find_elements(By.XPATH, ".//following-sibling::ul")
+						print(IWhite + str(len(next_el)))
+						"""
+		if (jd_certs == set()):
 			no_certs += 1
 		else:
-			yes_certs += 1"""
-		if foundcert:
 			yes_certs += 1
-		else:
-			no_certs += 1
-		
 		
 		
 		job_tracker += 1
@@ -340,7 +383,6 @@ try:
 	
 	for k,v in res.items():
 		print(f"{k} : {v}")
-	print(f"{yes_certs} jobs had certs listed, {no_certs} did not list any certs or could not be loaded.")
 except KeyboardInterrupt:
 	print(IRed + "[-] CTRL+C detected! Terminating")
 	res = dict(sorted(cert_dic.items(), key=lambda x: (-x[1], x[0])))
